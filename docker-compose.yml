@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: amr-postgres
+    environment:
+      POSTGRES_DB: amr_sentinel
+      POSTGRES_USER: amr_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_me_locally}
+    ports:
+      - "5434:5432"
+    volumes:
+      - amr_pgdata:/var/lib/postgresql/data
+      - ./app/db/schema.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amr_user -d amr_sentinel"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: amr-app
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql://amr_user:${DB_PASSWORD:-change_me_locally}@postgres:5432/amr_sentinel
+      ESM_MODEL_NAME: esm2_t6_8M_UR50D
+      NOVELTY_DISTANCE_THRESHOLD: 0.35
+    volumes:
+      - ./data/processed:/app/data/processed
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  amr_pgdata:
