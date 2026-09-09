@@ -33,6 +33,18 @@ def _extract_aro_accession(fasta_header: str) -> str | None:
     return f"ARO:{match.group(1)}" if match else None
 
 
+MIN_CLASS_SIZE = 5
+
+
+def _simplify_mechanism_label(mechanism: str) -> str:
+    """CARD sometimes lists multiple resistance mechanisms separated by
+    ';' for a single sequence. This keeps only the first-listed mechanism
+    as a simplifying assumption for single-label classification — a real
+    surveillance system would ideally support multi-label prediction, but
+    that's a meaningfully larger scope than this project targets."""
+    return mechanism.split(";")[0].strip()
+
+
 def build_training_table() -> pd.DataFrame:
     if not os.path.exists(FASTA_PATH) or not os.path.exists(ARO_INDEX_PATH):
         raise FileNotFoundError(
@@ -41,9 +53,6 @@ def build_training_table() -> pd.DataFrame:
         )
 
     aro_index = pd.read_csv(ARO_INDEX_PATH, sep="\t")
-    # CARD's aro_index.tsv columns include ARO Accession and Resistance Mechanism,
-    # though exact column names have shifted slightly across CARD versions -
-    # this normalizes whatever variant is present.
     aro_index.columns = [c.strip() for c in aro_index.columns]
     accession_col = next(c for c in aro_index.columns if "Accession" in c)
     mechanism_col = next(c for c in aro_index.columns if "Resistance Mechanism" in c)
@@ -56,20 +65,28 @@ def build_training_table() -> pd.DataFrame:
         mechanism = aro_lookup.get(accession)
 
         if mechanism is None or not mechanism.strip():
-            continue  # skip sequences we can't confidently label
+            continue
 
         sequence = str(record.seq)
         if len(sequence) < 20:
-            continue  # skip suspiciously short fragments
+            continue
 
         rows.append({
             "aro_accession": accession,
             "sequence": sequence,
-            "resistance_mechanism": mechanism.strip(),
+            "resistance_mechanism": _simplify_mechanism_label(mechanism),
         })
 
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
 
+    # Drop classes too small to learn or evaluate meaningfully
+    class_counts = df["resistance_mechanism"].value_counts()
+    valid_classes = class_counts[class_counts >= MIN_CLASS_SIZE].index
+    dropped = class_counts[class_counts < MIN_CLASS_SIZE]
+    if len(dropped) > 0:
+        print(f"Dropping {len(dropped)} classes with < {MIN_CLASS_SIZE} examples: {dict(dropped)}")
+
+    return df[df["resistance_mechanism"].isin(valid_classes)].reset_index(drop=True)
 
 if __name__ == "__main__":
     df = build_training_table()
