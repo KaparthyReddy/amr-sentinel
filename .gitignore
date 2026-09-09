@@ -1,1 +1,14 @@
+__pycache__/
+*.pyc
+.env
+venv/
+.venv/
 data/raw/
+data/processed/
+*.pkl
+*.joblib
+*.pt
+.pytest_cache/
+*.egg-info/
+.DS_Store
+torch_cache/
